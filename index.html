@@ -1133,14 +1133,14 @@
             pendingSyncQueue = pendingSyncQueue.filter(item => !(item.collectionName === collectionName && item.id === id));
             pendingSyncQueue.push({ collectionName, id, data, isDelete, timestamp: Date.now() });
             localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
-            async function processSyncQueue() {
+           async function processSyncQueue() {
     if (!navigator.onLine || !db) {
         updateSyncStatus('offline');
         return;
     }
 
     if (pendingSyncQueue.length === 0) {
-        updateSyncStatus('online', '(Sinkron)');
+        updateSyncStatus('online', '(Tuntas)');
         return;
     }
 
@@ -1149,7 +1149,6 @@
 
     for (const item of queueToProcess) {
         try {
-            // JALUR UTAMA: Langsung masuk ke koleksi Firebase Firestore milikmu
             const docRef = doc(db, item.collectionName, String(item.id));
             
             if (item.isDelete) {
@@ -1158,31 +1157,24 @@
                 await setDoc(docRef, item.data);
             }
             
-            // Hapus dari antrean lokal jika sukses terkirim
             pendingSyncQueue = pendingSyncQueue.filter(q => !(q.collectionName === item.collectionName && q.id === item.id));
             localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
             
         } catch (err) {
             console.error("Autosave Sync Error pada item:", item, err);
         }
-    }
-
-    updateSyncStatus('online', '(Tuntas)');
-}
-
-        function initializeTheme() {
-            const savedTheme = localStorage.getItem('theme');
-            const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            
-            if (savedTheme === 'dark' || (!savedTheme && systemPrefersDark)) {
-                document.documentElement.classList.add('dark');
-                updateThemeToggleIcon(true);
-            } else {
-                document.documentElement.classList.remove('dark');
-                updateThemeToggleIcon(false);
-            }
+    } catch (err) {
+            console.error("Autosave Sync Error pada item:", item, err);
         }
+    } // Ini penutup milik for (const item of queueToProcess)
 
+    if (pendingSyncQueue.length === 0) {
+        updateSyncStatus('online', '(Tuntas)');
+    } else {
+        updateSyncStatus('error');
+    }
+} // <-- LINK PENUTUP UTAMA NYA HARUS DI SINI!
+}
         function toggleTheme() {
             const html = document.documentElement;
             if (html.classList.contains('dark')) {
@@ -2931,7 +2923,6 @@ async function initFirebaseAndSync() {
         window.analyzeReportWithAI = analyzeReportWithAI;
         window.applyFilters = applyFilters;
         window.applySickFilters = applySickFilters;
-
         window.toggleDamageRepairerInput = toggleDamageRepairerInput;
         window.handleDamageSubmit = handleDamageSubmit;
         window.applyDamageFilters = applyDamageFilters;
