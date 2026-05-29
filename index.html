@@ -2799,19 +2799,17 @@
             });
         }
 
-        async function initFirebaseAndSync() {
-            if (!db || !auth) {
-                fallbackToOffline();
-                return;
-            }
-            updateSyncStatus('saving');
-            const user = await authenticate();
-            if (user) {
-                updateSyncStatus('online', '(Koneksi Berhasil)');
-                setupRealtimeListeners();
-                processSyncQueue();
-            } else {
-                fallbackToOffline();
+       async function initFirebaseAndSync() {
+    // BYPASS: Langsung jalankan tanpa autentikasi
+    if (!db) {
+        fallbackToOffline();
+        return;
+    }
+
+    updateSyncStatus('online', '(Koneksi Berhasil)');
+    setupRealtimeListeners();
+    processSyncQueue();
+}
             }
         }
 
