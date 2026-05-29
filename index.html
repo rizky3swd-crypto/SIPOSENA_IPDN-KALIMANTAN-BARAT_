@@ -1138,42 +1138,26 @@
         updateSyncStatus('offline');
         return;
     }
-
-    if (pendingSyncQueue.length === 0) {
-        updateSyncStatus('online', '(Tuntas)');
-        return;
-    }
-
+    
     updateSyncStatus('saving');
     const queueToProcess = [...pendingSyncQueue];
 
     for (const item of queueToProcess) {
         try {
             const docRef = doc(db, item.collectionName, String(item.id));
-            
             if (item.isDelete) {
                 await deleteDoc(docRef);
             } else {
                 await setDoc(docRef, item.data);
             }
-            
             pendingSyncQueue = pendingSyncQueue.filter(q => !(q.collectionName === item.collectionName && q.id === item.id));
             localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
-            
         } catch (err) {
-            console.error("Autosave Sync Error pada item:", item, err);
+            console.error("Sync Error:", err);
         }
-    } catch (err) {
-            console.error("Autosave Sync Error pada item:", item, err);
-        }
-    } // Ini penutup milik for (const item of queueToProcess)
-
-    if (pendingSyncQueue.length === 0) {
-        updateSyncStatus('online', '(Tuntas)');
-    } else {
-        updateSyncStatus('error');
     }
-} // <-- LINK PENUTUP UTAMA NYA HARUS DI SINI!
+    updateSyncStatus('online', '(Tuntas)');
+}
 }
         function toggleTheme() {
             const html = document.documentElement;
