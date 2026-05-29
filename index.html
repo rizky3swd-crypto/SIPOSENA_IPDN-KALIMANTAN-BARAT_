@@ -1133,50 +1133,42 @@
             pendingSyncQueue = pendingSyncQueue.filter(item => !(item.collectionName === collectionName && item.id === id));
             pendingSyncQueue.push({ collectionName, id, data, isDelete, timestamp: Date.now() });
             localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
-            processSyncQueue();
-        }
+            async function processSyncQueue() {
+    if (!navigator.onLine || !db) {
+        updateSyncStatus('offline');
+        return;
+    }
 
-        async function processSyncQueue() {
-            if (!navigator.onLine || !db) {
-                updateSyncStatus('offline');
-                return;
-            }
-            if (pendingSyncQueue.length === 0) {
-                updateSyncStatus('online', '(Sinkron)');
-                return;
-            }
+    if (pendingSyncQueue.length === 0) {
+        updateSyncStatus('online', '(Sinkron)');
+        return;
+    }
 
-            const user = await authenticate();
-            if (!user) {
-                updateSyncStatus('error');
-                return;
-            }
+    updateSyncStatus('saving');
+    const queueToProcess = [...pendingSyncQueue];
 
-            updateSyncStatus('saving');
-            const queueToProcess = [...pendingSyncQueue];
+    for (const item of queueToProcess) {
+        try {
+            // JALUR UTAMA: Langsung masuk ke koleksi Firebase Firestore milikmu
+            const docRef = doc(db, item.collectionName, String(item.id));
             
-            for (const item of queueToProcess) {
-                try {
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', item.collectionName, String(item.id));
-                    if (item.isDelete) {
-                        await deleteDoc(docRef);
-                    } else {
-                        await setDoc(docRef, item.data);
-                    }
-                    // Hapus item dari antrean jika berhasil dikirim
-                    pendingSyncQueue = pendingSyncQueue.filter(q => !(q.collectionName === item.collectionName && q.id === item.id));
-                    localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
-                } catch (err) {
-                    console.error("Autosave Sync Error pada item:", item, err);
-                }
-            }
-
-            if (pendingSyncQueue.length === 0) {
-                updateSyncStatus('online', '(Tuntas)');
+            if (item.isDelete) {
+                await deleteDoc(docRef);
             } else {
-                updateSyncStatus('error');
+                await setDoc(docRef, item.data);
             }
+            
+            // Hapus dari antrean lokal jika sukses terkirim
+            pendingSyncQueue = pendingSyncQueue.filter(q => !(q.collectionName === item.collectionName && q.id === item.id));
+            localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
+            
+        } catch (err) {
+            console.error("Autosave Sync Error pada item:", item, err);
         }
+    }
+
+    updateSyncStatus('online', '(Tuntas)');
+}
 
         function initializeTheme() {
             const savedTheme = localStorage.getItem('theme');
@@ -2897,30 +2889,24 @@
                     if (draft.image) {
                         selectedCompressedImageBase64 = draft.image;
                         const previewImg = document.getElementById('image-preview');
-                        previewImg.src = selectedCompressedImageBase64;
-                        document.getElementById('compression-success-box').classList.remove('hidden');
-                    }
-                } catch (e) {
-                    console.error("Draft parsing error:", e);
-                }
-            }
-        }
+                      } // Kurung penutup asli untuk if (draft.image)
 
-        function clearFormDraftFromCloud() {
-            localStorage.removeItem('siposena_lapsit_draft');
-        }
+async function initFirebaseAndSync() {
+    if (!db) {
+        fallbackToOffline();
+        return;
+    }
 
-        // Network connection listener untuk auto-sync
-        window.addEventListener('online', () => {
-            showToast("Koneksi terdeteksi. Memulai sinkronisasi otomatis ke cloud...", "success");
-            processSyncQueue();
-        });
+    updateSyncStatus('saving');
+    updateSyncStatus('online', '(Koneksi Berhasil)');
+    setupRealtimeListeners();
+    processSyncQueue();
+}
 
-        window.addEventListener('offline', () => {
-            showToast("Koneksi terputus. Mode lokal aktif secara otomatis.", "error");
-            updateSyncStatus('offline');
-        });
-
+       window.addEventListener('offline', () => {
+    showToast("Koneksi terputus. Mode lokal aktif sementara.", "warning");
+    // Proteksi offline dimatikan agar tombol simpan & upload foto tidak terkunci otomatis
+});
         // Global function exposures
         window.toggleTheme = toggleTheme;
         window.switchMainSection = switchMainSection;
@@ -2984,5 +2970,28 @@
             });
         }
     </script>
+    <script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyCzz115LTrbzikw6raSCUPXiNqUtjMtGzY",
+    authDomain: "siposena-ipdn-kalbar.firebaseapp.com",
+    projectId: "siposena-ipdn-kalbar",
+    storageBucket: "siposena-ipdn-kalbar.firebasestorage.app",
+    messagingSenderId: "819859446303",
+    appId: "1:819859446303:web:0ad0aef9bc93ce1335132a",
+    measurementId: "G-NPB837K3SV"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
 </body>
 </html>
