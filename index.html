@@ -2892,6 +2892,13 @@ async function initFirebaseAndSync() {
     // Proteksi offline dimatikan agar tombol simpan & upload foto tidak terkunci otomatis
 });
         // Global function exposures
+                    function switchMainSection(sectionId) {
+    const sections = ['section-lapsit', 'section-sick', 'section-damage'];
+    sections.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (id === sectionId) ? 'block' : 'none';
+    });
+}
         window.toggleTheme = toggleTheme;
         window.switchMainSection = switchMainSection;
         window.loadDefaultPrajaStats = loadDefaultPrajaStats;
