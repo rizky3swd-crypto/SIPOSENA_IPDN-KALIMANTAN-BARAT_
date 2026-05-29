@@ -1173,19 +1173,29 @@
                 showToast("Mode malam aktif", "success");
             }
         }
-
-        function updateThemeToggleIcon(isDark) {
-            const icon = document.getElementById('theme-toggle-icon');
-            if (icon) {
-                if (isDark) {
-                    icon.className = "fa-solid fa-sun text-amber-400";
-                } else {
-                    icon.className = "fa-solid fa-moon text-slate-100";
-                }
+updateSyncStatus('saving');
+    const queueToProcess = [...pendingSyncQueue];
+async function processSyncQueue() {
+    if (!db) return;
+    
+    updateSyncStatus('saving');
+    
+    for (const item of [...pendingSyncQueue]) {
+        try {
+            const docRef = doc(db, item.collectionName, String(item.id));
+            if (item.isDelete) {
+                await deleteDoc(docRef);
+            } else {
+                await setDoc(docRef, item.data);
             }
+            pendingSyncQueue = pendingSyncQueue.filter(q => !(q.collectionName === item.collectionName && q.id === item.id));
+        } catch (err) {
+            console.error("Sync Error, dilanjutkan:", err);
         }
-
-        function switchMainSection(section) {
+    }
+    localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
+    updateSyncStatus('online', '(Tuntas)');
+}
             const sectionLapsit = document.getElementById('section-lapsit');
             const sectionSick = document.getElementById('section-sick');
             const sectionDamage = document.getElementById('section-damage');
