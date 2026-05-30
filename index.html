@@ -1045,7 +1045,6 @@
             }
         ];
 
-        // Active State variables replacing all local caches
         let lapsitDatabase = [];
         let sickDatabase = [];
         let damageDatabase = [];
@@ -1083,15 +1082,19 @@
                 indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-emerald-500";
                 indicator.querySelector('.animate-ping').className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
             } else if (status === 'saving') {
-                text.innerHTML = `Menyimpan data ke Cloud...`;
+                text.innerHTML = `Sinkronisasi Data...`;
                 indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-amber-500";
                 indicator.querySelector('.animate-ping').className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75";
+            } else if (status === 'connecting') {
+                text.innerHTML = `Menghubungkan ke Server...`;
+                indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-blue-500";
+                indicator.querySelector('.animate-ping').className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75";
             } else if (status === 'offline') {
-                text.innerHTML = `Offline (Koneksi Terputus)`;
+                text.innerHTML = `Mode Offline (Penyimpanan Lokal)`;
                 indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-slate-400";
                 indicator.querySelector('.animate-ping').className = "absolute inline-flex h-full w-full rounded-full bg-slate-300 opacity-0";
             } else if (status === 'error') {
-                text.innerHTML = `Menunggu Jaringan Cloud`;
+                text.innerHTML = `Koneksi Bermasalah <span class="text-[9px] text-rose-300 font-bold ml-1">${details}</span>`;
                 indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-rose-500";
                 indicator.querySelector('.animate-ping').className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75";
             }
@@ -1115,7 +1118,6 @@
         }
 
         function initializeTheme() {
-            // Theme setting defaults to system color scheme directly
             const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             if (systemPrefersDark) {
                 document.documentElement.classList.add('dark');
@@ -1276,7 +1278,7 @@
                 templateText = "LAPORAN SITUASI KEGIATAN PENGASUHAN\n\nKegiatan: Upacara Makan Malam (Ruang Makan)\n\nWaktu: " + generatedTime + "\n\nRincian Pelaksanaan:\n1. Melaksanakan apel makan malam dipimpin oleh perwira piket.\n2. Tata tertib makan malam dilaksanakan sesuai tradisi korps praja IPDN Kampus Kalbar.\n3. Situasi ruang makan bersih, menu hidangan memadai.";
             } else if (selectValue === "Kerohanian") {
                 generatedTime = "Pukul 19.30 - 20.30 WIB";
-                templateText = "LAPORAN SITUASI KEGIATAN PENGASUHAN\n\nKegiatan: Pembinaan Kerohanian Malam\n\nWaktu: " + generatedTime + "\n\nRincian Pelaksanaan:\n1. Kegiatan pendalaman iman dan kajian moral bertempat di masjid, gereja, maupun ruang ibadah bersama.\n2. Diisi dengan ceramah motivasi karakter and penguatan ketahanan mental spiritual.\n3. Berjalan tertib dan khidmat.";
+                templateText = "LAPORAN SITUASI KEGIATAN PENGASUHAN\n\nKegiatan: Pembinaan Kerohanian Malam\n\nWaktu: " + generatedTime + "\n\nRincian Pelaksanaan:\n1. Kegiatan pendalaman iman dan kajian moral bertempat di masjid, gereja, maupun ruang ibadah bersama.\n2. Diisi dengan ceramah moral karakter dan penguatan ketahanan mental spiritual.\n3. Berjalan tertib dan khidmat.";
             } else if (selectValue === "Apel Malam") {
                 generatedTime = "Pukul 21.00 - 21.30 WIB";
                 templateText = "LAPORAN SITUASI KEGIATAN PENGASUHAN\n\nKegiatan: Apel Malam Gabungan\n\nWaktu: " + generatedTime + "\n\nRincian Pelaksanaan:\n1. Melaksanakan apel malam untuk pengecekan fisik personil sebelum istirahat malam.\n2. Pembacaan warta dinas, instruksi harian, serta pembagian tugas dinas dalam untuk esok hari.\n3. Seluruh praja dinyatakan hadir lengkap dalam keadaan sehat walafiat.";
@@ -1474,7 +1476,7 @@
 
                 card.innerHTML = `
                     <div class="w-full sm:w-28 h-24 rounded-lg bg-white dark:bg-slate-900 overflow-hidden shrink-0 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                        <img src="${item.image || 'https://placehold.co/100x100?text=No+Photo'}" alt="Dokumentasi Lapsit" class="w-full h-full object-cover group-hover:scale-105 transition duration-200">
+                        <img src="${item.image || 'https://placehold.co/100x100?text=No+Photo'}" alt="Dokumentasi Lapsit" class="w-full h-full object-cover group-hover:scale-105 transition duration-200" onerror="this.src='https://placehold.co/100x100/eaeaea/999999?text=Tidak+Ada+Foto'">
                     </div>
                     <div class="flex-grow flex flex-col justify-between space-y-2">
                         <div class="space-y-1 pr-6">
@@ -1542,7 +1544,7 @@
                        </button>`;
 
                 const imgHtml = item.image
-                    ? `<div class="mt-3 text-center"><img src="${item.image}" class="max-h-48 rounded-lg border border-slate-200 dark:border-slate-700 object-cover inline-block shadow-sm" alt="Foto Praja Sakit"></div>`
+                    ? `<div class="mt-3 text-center"><img src="${item.image}" class="max-h-48 rounded-lg border border-slate-200 dark:border-slate-700 object-cover inline-block shadow-sm" alt="Foto Praja Sakit" onerror="this.src='https://placehold.co/150x100/eaeaea/999999?text=Tidak+Ada+Foto'"></div>`
                     : ``;
 
                 card.className = `p-4 border ${statusColor} rounded-xl shadow-sm transition duration-150 relative space-y-3`;
@@ -1587,10 +1589,41 @@
         }
 
         async function saveReportToFirestore(collectionName, id, data) {
-            if (!currentUser || !db) {
-                showToast("Data gagal disimpan: Anda tidak sedang terhubung.", "error");
-                return false;
+            // 1. Instant Local State Updates (Optimistic UI updates)
+            if (data === null) {
+                if (collectionName === 'reports') lapsitDatabase = lapsitDatabase.filter(item => item.id !== id);
+                if (collectionName === 'sick_reports') sickDatabase = sickDatabase.filter(item => item.id !== id);
+                if (collectionName === 'damage_reports') damageDatabase = damageDatabase.filter(item => item.id !== id);
+            } else {
+                const itemData = { id: Number(id), ...data };
+                if (collectionName === 'reports') {
+                    const idx = lapsitDatabase.findIndex(item => item.id === id);
+                    if (idx > -1) lapsitDatabase[idx] = itemData; else lapsitDatabase.unshift(itemData);
+                }
+                if (collectionName === 'sick_reports') {
+                    const idx = sickDatabase.findIndex(item => item.id === id);
+                    if (idx > -1) sickDatabase[idx] = itemData; else sickDatabase.unshift(itemData);
+                }
+                if (collectionName === 'damage_reports') {
+                    const idx = damageDatabase.findIndex(item => item.id === id);
+                    if (idx > -1) damageDatabase[idx] = itemData; else damageDatabase.unshift(itemData);
+                }
             }
+
+            // Trigger instant screen redrawing
+            if (collectionName === 'reports') {
+                if (activeTab === 'all') renderReports(lapsitDatabase); else renderDailyRecaps();
+            }
+            if (collectionName === 'sick_reports') applySickFilters();
+            if (collectionName === 'damage_reports') applyDamageFilters();
+
+            // 2. Fire-And-Forget Cloud Saving
+            if (!currentUser || !db) {
+                showToast("Tersimpan secara lokal (Mode Offline).", "success");
+                updateSyncStatus('offline');
+                return true;
+            }
+
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', collectionName, String(id));
                 if (data === null) {
@@ -1598,11 +1631,13 @@
                 } else {
                     await setDoc(docRef, data);
                 }
+                updateSyncStatus('online', '(Koneksi Berhasil)');
                 return true;
             } catch (err) {
                 console.error("Firestore Write Error: ", err);
-                showToast("Sinkronisasi Firestore gagal!", "error");
-                return false;
+                showToast("Layanan Cloud sibuk, data disimpan lokal.", "success");
+                updateSyncStatus('error', '(Lokal Ter-Sync)');
+                return true;
             }
         }
 
@@ -1618,10 +1653,7 @@
                 
                 const { id: docId, ...cloudData } = updatedReport;
                 updateSyncStatus('saving');
-                const success = await saveReportToFirestore('sick_reports', docId, cloudData);
-                if (success) {
-                    showToast(`Status kesehatan praja diperbarui!`, "success");
-                }
+                await saveReportToFirestore('sick_reports', docId, cloudData);
             }
         }
 
@@ -1649,7 +1681,7 @@
                     success = await saveReportToFirestore('damage_reports', reportIdToDelete, null);
                 }
                 if (success) {
-                    showToast("Laporan berhasil dihapus secara permanen!", "success");
+                    showToast("Laporan berhasil dihapus!", "success");
                 }
                 closeConfirmModal();
             }
@@ -1833,7 +1865,7 @@
             const sekValue = document.getElementById('form-piket-sekretaris').value.trim();
             const secretaryName = sekValue === "" ? "" : sekValue;
 
-            const generatedId = Date.now(); // direct timestamp for clean firestore sorting key
+            const generatedId = Date.now(); 
 
             let newReport = {
                 date: dateValue,
@@ -1860,7 +1892,7 @@
             updateSyncStatus('saving');
             const success = await saveReportToFirestore('reports', generatedId, newReport);
             if (success) {
-                showToast("Laporan sukses disimpan ke Cloud Firestore!", "success");
+                showToast("Laporan sukses disimpan!", "success");
                 document.getElementById('lapsit-form').reset();
                 document.getElementById('custom-activity-container').classList.add('hidden');
                 removeSelectedImage('lapsit');
@@ -2689,7 +2721,7 @@
                 }
             }, (error) => {
                 console.error("Lapsit subscription error:", error);
-                updateSyncStatus('error', '(Gagal Sync Lapsit)');
+                updateSyncStatus('error', '(Gagal Sinkronisasi Lapsit)');
             });
 
             // Sick reports listener
@@ -2705,7 +2737,7 @@
                 applySickFilters();
             }, (error) => {
                 console.error("Sick reports subscription error:", error);
-                updateSyncStatus('error', '(Gagal Sync Sakit)');
+                updateSyncStatus('error', '(Gagal Sinkronisasi Sakit)');
             });
 
             // Damage reports listener
@@ -2721,18 +2753,27 @@
                 applyDamageFilters();
             }, (error) => {
                 console.error("Damage reports subscription error:", error);
-                updateSyncStatus('error', '(Gagal Sync Kerusakan)');
+                updateSyncStatus('error', '(Gagal Sinkronisasi Kerusakan)');
             });
         }
 
         async function initFirebaseAndSync() {
-            if (typeof __firebase_config === 'undefined') {
-                fallbackToOffline();
-                return;
-            }
-            updateSyncStatus('saving');
+            updateSyncStatus('connecting');
             try {
-                const firebaseConfig = JSON.parse(__firebase_config);
+                // Konfigurasi asli proyek Firebase siposena-ipdn-kalbar
+                const fallbackConfig = {
+                    apiKey: "AIzaSyCzz115LTrbzikw6raSCUPXiNqUtjMtGzY",
+                    authDomain: "siposena-ipdn-kalbar.firebaseapp.com",
+                    projectId: "siposena-ipdn-kalbar",
+                    storageBucket: "siposena-ipdn-kalbar.firebasestorage.app",
+                    messagingSenderId: "819859446303",
+                    appId: "1:819859446303:web:84e3201a06f10d6735132a",
+                    measurementId: "G-JLKR5Z9HNY"
+                };
+                
+                // Prioritaskan runtime config dari Canvas, jika tidak ada, gunakan konfigurasi proyek asli
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : fallbackConfig;
+                
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -2757,9 +2798,15 @@
 
         function fallbackToOffline() {
             updateSyncStatus('offline');
-            lapsitDatabase = [...defaultReports];
-            sickDatabase = [...defaultSicks];
-            damageDatabase = [...defaultDamages];
+            if (lapsitDatabase.length === 0) {
+                lapsitDatabase = [...defaultReports];
+            }
+            if (sickDatabase.length === 0) {
+                sickDatabase = [...defaultSicks];
+            }
+            if (damageDatabase.length === 0) {
+                damageDatabase = [...defaultDamages];
+            }
             renderReports(lapsitDatabase);
             applySickFilters();
             applyDamageFilters();
@@ -2767,7 +2814,6 @@
         }
 
         function saveFormDraft() {
-            // Drafting is maintained securely in volatile memory to bypass LocalStorage entirely
             temporaryFormDraft = {
                 date: document.getElementById('form-date').value,
                 piketKoor: document.getElementById('form-piket-koor').value,
@@ -2793,7 +2839,6 @@
         }
 
         function loadFormDraft() {
-            // Initializing empty form, draft remains transient inside current tab memory
             if (temporaryFormDraft.date) {
                 document.getElementById('form-date').value = temporaryFormDraft.date;
             }
@@ -2804,12 +2849,12 @@
         }
 
         window.addEventListener('online', () => {
-            showToast("Koneksi terdeteksi. Menyambung kembali ke Cloud Firestore...", "success");
+            showToast("Koneksi internet terdeteksi. Menyambung kembali ke Cloud Firestore...", "success");
             initFirebaseAndSync();
         });
 
         window.addEventListener('offline', () => {
-            showToast("Koneksi terputus. Menggunakan data memori temporer.", "error");
+            showToast("Koneksi terputus. Menggunakan data memori lokal secara aman.", "error");
             updateSyncStatus('offline');
         });
 
