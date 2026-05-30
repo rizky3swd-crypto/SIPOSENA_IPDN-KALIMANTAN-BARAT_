@@ -990,7 +990,7 @@
     <footer class="bg-slate-100 dark:bg-slate-900 border-t border-slate-200 dark:bg-slate-800 py-5 text-center text-[10px] text-slate-500 dark:text-slate-400 no-print transition-colors duration-250">
         <div class="max-w-7xl mx-auto px-4 space-y-1">
             <p><strong>SIPOSENA IPDN KALBAR</strong> - Platform Digital Laporan Situasi Kampus Terintegrasi.</p>
-            <p class="text-slate-400 dark:text-slate-500">Sistem kompresi otomatis lokal & Cloud Auto-Save Engine.</p>
+            <p class="text-slate-400 dark:text-slate-500">Sistem terintegrasi penuh ke Cloud Firestore tanpa LocalStorage.</p>
         </div>
     </footer>
 
@@ -1000,8 +1000,8 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Memuat database utama dari local storage terlebih dahulu agar instan & offline-proof
-        let lapsitDatabase = JSON.parse(localStorage.getItem('siposena_reports')) || [
+        // Default Mockup Data used only as a visual fallback when database is currently empty
+        const defaultReports = [
             {
                 id: 1,
                 date: "2026-02-15",
@@ -1019,7 +1019,7 @@
             }
         ];
 
-        let sickDatabase = JSON.parse(localStorage.getItem('siposena_sick_reports')) || [
+        const defaultSicks = [
             {
                 id: 1,
                 date: "2026-02-20",
@@ -1033,7 +1033,7 @@
             }
         ];
 
-        let damageDatabase = JSON.parse(localStorage.getItem('siposena_damage_reports')) || [
+        const defaultDamages = [
             {
                 id: 1,
                 date: "2026-02-18",
@@ -1044,6 +1044,12 @@
                 repairer: ""
             }
         ];
+
+        // Active State variables replacing all local caches
+        let lapsitDatabase = [];
+        let sickDatabase = [];
+        let damageDatabase = [];
+        let temporaryFormDraft = {};
 
         let activeTab = 'all'; 
         let currentlySelectedModalReportId = null;
@@ -1061,30 +1067,10 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'lapsit-ipdn-kalbar';
         let db = null;
         let auth = null;
+        let currentUser = null;
         let reportsCollectionRef = null;
         let sickCollectionRef = null;
         let damagesCollectionRef = null;
-
-        // Antrean sinkronisasi lokal untuk menangani kondisi offline/lambat secara elegan
-        let pendingSyncQueue = JSON.parse(localStorage.getItem('siposena_pending_sync')) || [];
-
-        if (typeof __firebase_config !== 'undefined') {
-            try {
-                const firebaseConfig = JSON.parse(__firebase_config);
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                reportsCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
-                sickCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'sick_reports');
-                damagesCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'damage_reports');
-            } catch (err) {
-                console.error("Firebase Init Error: ", err);
-            }
-        }
-
-        function saveToLocalCache(key, data) {
-            localStorage.setItem(key, JSON.stringify(data));
-        }
 
         function updateSyncStatus(status, details = "") {
             const text = document.getElementById('sync-text');
@@ -1093,19 +1079,19 @@
             
             indicator.classList.remove('hidden');
             if (status === 'online') {
-                text.innerHTML = `Cloud Auto-Save Aktif <span class="text-[9px] text-cyan-300 font-bold ml-1">${details}</span>`;
+                text.innerHTML = `Cloud Storage Aktif <span class="text-[9px] text-cyan-300 font-bold ml-1">${details}</span>`;
                 indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-emerald-500";
                 indicator.querySelector('.animate-ping').className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
             } else if (status === 'saving') {
-                text.innerHTML = `Sinkronisasi Cloud...`;
+                text.innerHTML = `Menyimpan data ke Cloud...`;
                 indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-amber-500";
                 indicator.querySelector('.animate-ping').className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75";
             } else if (status === 'offline') {
-                text.innerHTML = `Offline (Tersimpan Aman di Lokal)`;
+                text.innerHTML = `Offline (Koneksi Terputus)`;
                 indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-slate-400";
                 indicator.querySelector('.animate-ping').className = "absolute inline-flex h-full w-full rounded-full bg-slate-300 opacity-0";
             } else if (status === 'error') {
-                text.innerHTML = `Menunggu Jaringan (Lokal Aman)`;
+                text.innerHTML = `Menunggu Jaringan Cloud`;
                 indicator.querySelector('.relative.inline-flex').className = "relative inline-flex rounded-full h-2 w-2 bg-rose-500";
                 indicator.querySelector('.animate-ping').className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75";
             }
@@ -1128,74 +1114,43 @@
             }
         }
 
-        async function pushToSyncQueue(collectionName, id, data, isDelete = false) {
-            // Hilangkan antrean usang dengan ID yang sama agar efisien
-            pendingSyncQueue = pendingSyncQueue.filter(item => !(item.collectionName === collectionName && item.id === id));
-            pendingSyncQueue.push({ collectionName, id, data, isDelete, timestamp: Date.now() });
-            localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
-           async function processSyncQueue() {
-    if (!navigator.onLine || !db) {
-        updateSyncStatus('offline');
-        return;
-    }
-    
-    updateSyncStatus('saving');
-    const queueToProcess = [...pendingSyncQueue];
-
-    for (const item of queueToProcess) {
-        try {
-            const docRef = doc(db, item.collectionName, String(item.id));
-            if (item.isDelete) {
-                await deleteDoc(docRef);
+        function initializeTheme() {
+            // Theme setting defaults to system color scheme directly
+            const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (systemPrefersDark) {
+                document.documentElement.classList.add('dark');
+                updateThemeToggleIcon(true);
             } else {
-                await setDoc(docRef, item.data);
+                document.documentElement.classList.remove('dark');
+                updateThemeToggleIcon(false);
             }
-            pendingSyncQueue = pendingSyncQueue.filter(q => !(q.collectionName === item.collectionName && q.id === item.id));
-            localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
-        } catch (err) {
-            console.error("Sync Error:", err);
         }
-    }
-    updateSyncStatus('online', '(Tuntas)');
-}
-}
+
         function toggleTheme() {
             const html = document.documentElement;
             if (html.classList.contains('dark')) {
                 html.classList.remove('dark');
-                localStorage.setItem('theme', 'light');
                 updateThemeToggleIcon(false);
                 showToast("Mode terang aktif", "success");
             } else {
                 html.classList.add('dark');
-                localStorage.setItem('theme', 'dark');
                 updateThemeToggleIcon(true);
                 showToast("Mode malam aktif", "success");
             }
         }
-updateSyncStatus('saving');
-    const queueToProcess = [...pendingSyncQueue];
-async function processSyncQueue() {
-    if (!db) return;
-    
-    updateSyncStatus('saving');
-    
-    for (const item of [...pendingSyncQueue]) {
-        try {
-            const docRef = doc(db, item.collectionName, String(item.id));
-            if (item.isDelete) {
-                await deleteDoc(docRef);
-            } else {
-                await setDoc(docRef, item.data);
+
+        function updateThemeToggleIcon(isDark) {
+            const icon = document.getElementById('theme-toggle-icon');
+            if (icon) {
+                if (isDark) {
+                    icon.className = "fa-solid fa-sun text-amber-400";
+                } else {
+                    icon.className = "fa-solid fa-moon text-slate-100";
+                }
             }
-            pendingSyncQueue = pendingSyncQueue.filter(q => !(q.collectionName === item.collectionName && q.id === item.id));
-        } catch (err) {
-            console.error("Sync Error, dilanjutkan:", err);
         }
-    }
-    localStorage.setItem('siposena_pending_sync', JSON.stringify(pendingSyncQueue));
-    updateSyncStatus('online', '(Tuntas)');
-}
+
+        function switchMainSection(section) {
             const sectionLapsit = document.getElementById('section-lapsit');
             const sectionSick = document.getElementById('section-sick');
             const sectionDamage = document.getElementById('section-damage');
@@ -1631,21 +1586,42 @@ async function processSyncQueue() {
             });
         }
 
+        async function saveReportToFirestore(collectionName, id, data) {
+            if (!currentUser || !db) {
+                showToast("Data gagal disimpan: Anda tidak sedang terhubung.", "error");
+                return false;
+            }
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', collectionName, String(id));
+                if (data === null) {
+                    await deleteDoc(docRef);
+                } else {
+                    await setDoc(docRef, data);
+                }
+                return true;
+            } catch (err) {
+                console.error("Firestore Write Error: ", err);
+                showToast("Sinkronisasi Firestore gagal!", "error");
+                return false;
+            }
+        }
+
         async function toggleSickStatus(id) {
             const targetReport = sickDatabase.find(s => s.id === id);
             if (targetReport) {
                 const nextStatus = targetReport.status === "Belum Sembuh" ? "Sudah Sembuh" : "Belum Sembuh";
-                targetReport.status = nextStatus;
+                const updatedReport = {
+                    ...targetReport,
+                    status: nextStatus,
+                    healer: nextStatus === "Sudah Sembuh" ? "Piket Jaga / Dokter" : ""
+                };
                 
-                // Simpan lokal instan
-                saveToLocalCache('siposena_sick_reports', sickDatabase);
-                
-                // Jalankan antrean sinkronisasi
-                const { id: docId, ...cloudData } = targetReport;
-                pushToSyncQueue('sick_reports', docId, cloudData);
-
-                showToast(`Status kesehatan praja diperbarui!`, "success");
-                applySickFilters();
+                const { id: docId, ...cloudData } = updatedReport;
+                updateSyncStatus('saving');
+                const success = await saveReportToFirestore('sick_reports', docId, cloudData);
+                if (success) {
+                    showToast(`Status kesehatan praja diperbarui!`, "success");
+                }
             }
         }
 
@@ -1663,30 +1639,17 @@ async function processSyncQueue() {
 
         async function executeDeleteReport() {
             if (reportIdToDelete !== null) {
+                updateSyncStatus('saving');
+                let success = false;
                 if (deleteType === 'lapsit') {
-                    lapsitDatabase = lapsitDatabase.filter(report => report.id !== reportIdToDelete);
-                    saveToLocalCache('siposena_reports', lapsitDatabase);
-                    pushToSyncQueue('reports', reportIdToDelete, null, true);
-                    
-                    showToast("Laporan berhasil terhapus!", "success");
-                    applyFilters();
-                    if (activeTab === 'daily') {
-                        renderDailyRecaps();
-                    }
+                    success = await saveReportToFirestore('reports', reportIdToDelete, null);
                 } else if (deleteType === 'sick') {
-                    sickDatabase = sickDatabase.filter(report => report.id !== reportIdToDelete);
-                    saveToLocalCache('siposena_sick_reports', sickDatabase);
-                    pushToSyncQueue('sick_reports', reportIdToDelete, null, true);
-
-                    showToast("Laporan sakit terhapus!", "success");
-                    applySickFilters();
+                    success = await saveReportToFirestore('sick_reports', reportIdToDelete, null);
                 } else if (deleteType === 'damage') {
-                    damageDatabase = damageDatabase.filter(d => d.id !== reportIdToDelete);
-                    saveToLocalCache('siposena_damage_reports', damageDatabase);
-                    pushToSyncQueue('damage_reports', reportIdToDelete, null, true);
-
-                    showToast("Laporan kerusakan berhasil dihapus!", "success");
-                    applyDamageFilters();
+                    success = await saveReportToFirestore('damage_reports', reportIdToDelete, null);
+                }
+                if (success) {
+                    showToast("Laporan berhasil dihapus secara permanen!", "success");
                 }
                 closeConfirmModal();
             }
@@ -1870,10 +1833,9 @@ async function processSyncQueue() {
             const sekValue = document.getElementById('form-piket-sekretaris').value.trim();
             const secretaryName = sekValue === "" ? "" : sekValue;
 
-            const generatedId = lapsitDatabase.length > 0 ? Math.max(...lapsitDatabase.map(r => r.id)) + 1 : 1;
+            const generatedId = Date.now(); // direct timestamp for clean firestore sorting key
 
             let newReport = {
-                id: generatedId,
                 date: dateValue,
                 personnel: personnelValue,
                 image: selectedCompressedImageBase64,
@@ -1895,25 +1857,15 @@ async function processSyncQueue() {
                 }
             };
 
-            // Penyimpanan lokal instan
-            lapsitDatabase.unshift(newReport);
-            saveToLocalCache('siposena_reports', lapsitDatabase);
-
-            // Antrekan ke cloud
-            const { id, ...cloudData } = newReport;
-            pushToSyncQueue('reports', id, cloudData);
-            showToast("Laporan berhasil disimpan secara lokal & cloud!", "success");
-
-            document.getElementById('lapsit-form').reset();
-            document.getElementById('custom-activity-container').classList.add('hidden');
-            removeSelectedImage('lapsit');
-            loadDefaultPrajaStats();
-            clearFormDraftFromCloud();
-            
-            if (activeTab === 'all') {
-                renderReports(lapsitDatabase);
-            } else {
-                renderDailyRecaps();
+            updateSyncStatus('saving');
+            const success = await saveReportToFirestore('reports', generatedId, newReport);
+            if (success) {
+                showToast("Laporan sukses disimpan ke Cloud Firestore!", "success");
+                document.getElementById('lapsit-form').reset();
+                document.getElementById('custom-activity-container').classList.add('hidden');
+                removeSelectedImage('lapsit');
+                loadDefaultPrajaStats();
+                clearFormDraft();
             }
         }
 
@@ -1932,10 +1884,9 @@ async function processSyncQueue() {
             const statusVal = document.querySelector('input[name="sick-status"]:checked').value;
             const piketPerwiraVal = document.getElementById('sick-piket-perwira').value;
 
-            const generatedId = sickDatabase.length > 0 ? Math.max(...sickDatabase.map(s => s.id)) + 1 : 1;
+            const generatedId = Date.now();
 
             const newSickReport = {
-                id: generatedId,
                 date: dateVal,
                 cadetName: cadetNameVal,
                 illness: illnessVal,
@@ -1946,22 +1897,15 @@ async function processSyncQueue() {
                 healer: statusVal === "Sudah Sembuh" ? "Piket Jaga / Dokter" : ""
             };
 
-            // Penyimpanan lokal instan
-            sickDatabase.unshift(newSickReport);
-            saveToLocalCache('siposena_sick_reports', sickDatabase);
-
-            // Antrekan ke cloud
-            const { id, ...cloudData } = newSickReport;
-            pushToSyncQueue('sick_reports', id, cloudData);
-            showToast("Laporan sakit berhasil ditambahkan!", "success");
-
-            document.getElementById('sick-form').reset();
-            removeSelectedImage('sick');
-            
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('sick-date').value = today;
-
-            applySickFilters();
+            updateSyncStatus('saving');
+            const success = await saveReportToFirestore('sick_reports', generatedId, newSickReport);
+            if (success) {
+                showToast("Laporan praja sakit sukses disimpan!", "success");
+                document.getElementById('sick-form').reset();
+                removeSelectedImage('sick');
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('sick-date').value = today;
+            }
         }
 
         function applySickFilters() {
@@ -2004,10 +1948,9 @@ async function processSyncQueue() {
                 return;
             }
 
-            const generatedId = damageDatabase.length > 0 ? Math.max(...damageDatabase.map(d => d.id)) + 1 : 1;
+            const generatedId = Date.now();
 
             let newDamage = {
-                id: generatedId,
                 date: dateValue,
                 wisma: wismaValue,
                 reporter: reporterValue,
@@ -2016,22 +1959,15 @@ async function processSyncQueue() {
                 repairer: initStatus === "Sudah Diperbaiki" ? repairerValue : ""
             };
 
-            // Penyimpanan lokal instan
-            damageDatabase.unshift(newDamage);
-            saveToLocalCache('siposena_damage_reports', damageDatabase);
-
-            // Antrekan ke cloud
-            const { id, ...cloudData } = newDamage;
-            pushToSyncQueue('damage_reports', id, cloudData);
-            showToast("Laporan kerusakan berhasil diregistrasi!", "success");
-
-            document.getElementById('damage-form').reset();
-            toggleDamageRepairerInput(false);
-            
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('damage-date').value = today;
-
-            applyDamageFilters();
+            updateSyncStatus('saving');
+            const success = await saveReportToFirestore('damage_reports', generatedId, newDamage);
+            if (success) {
+                showToast("Laporan kerusakan berhasil diregistrasi!", "success");
+                document.getElementById('damage-form').reset();
+                toggleDamageRepairerInput(false);
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('damage-date').value = today;
+            }
         }
 
         function renderDamages(items) {
@@ -2132,19 +2068,18 @@ async function processSyncQueue() {
 
             const targetReport = damageDatabase.find(d => d.id === repairIdToUpdate);
             if (targetReport) {
-                targetReport.status = "Sudah Diperbaiki";
-                targetReport.repairer = repairerName;
-
-                // Penyimpanan lokal instan
-                saveToLocalCache('siposena_damage_reports', damageDatabase);
-
-                // Antrekan ke cloud
-                const { id, ...cloudData } = targetReport;
-                pushToSyncQueue('damage_reports', id, cloudData);
-
-                showToast("Status kerusakan berhasil diperbarui!", "success");
-                closeRepairModal();
-                applyDamageFilters();
+                const updatedReport = {
+                    ...targetReport,
+                    status: "Sudah Diperbaiki",
+                    repairer: repairerName
+                };
+                const { id: docId, ...cloudData } = updatedReport;
+                updateSyncStatus('saving');
+                const success = await saveReportToFirestore('damage_reports', docId, cloudData);
+                if (success) {
+                    showToast("Status kerusakan berhasil diperbarui!", "success");
+                    closeRepairModal();
+                }
             }
         }
 
@@ -2405,9 +2340,13 @@ async function processSyncQueue() {
                     <div class="content-box">${report.personnel.replace(/\n/g, '<br>')}</div>
 
                     <div class="section-title">III. Lampiran Dokumentasi Kegiatan</div>
-                    <div style="text-align: center; margin-top: 15px;">
-                        <img src="${report.image}" style="max-width: 13.5cm; width: 100%; max-height: 8.5cm; height: auto; border: 1.5px solid #000000; padding: 2px; display: block; margin-left: auto; margin-right: auto;" alt="Dokumentasi">
-                    </div>
+                    <table align="center" style="border-collapse: collapse; margin-top: 15px; width: 100%;">
+                        <tr>
+                            <td align="center">
+                                <img src="${report.image}" width="420" style="width: 420px; max-width: 100%; height: auto; border: 1.5px solid #000000; padding: 2px;" alt="Dokumentasi">
+                            </td>
+                        </tr>
+                    </table>
 
                     <table style="width: 100%; border: none; margin-top: 30px;">
                         <tr>
@@ -2566,9 +2505,13 @@ async function processSyncQueue() {
                             <div style="font-size: 9pt; line-height: 1.4; margin-bottom: 12px; white-space: pre-wrap; font-family: 'Times New Roman', Times, serif; color: #000000;">${act.personnel.replace(/\n/g, '<br>')}</div>
                             
                             ${act.image ? `
-                            <div style="margin-top: 10px; margin-bottom: 5px; text-align: center;">
-                                <img src="${act.image}" style="max-width: 9.2cm; width: 100%; max-height: 7cm; height: auto; border: 1.5px solid #000000; padding: 2px; display: block; margin-left: auto; margin-right: auto; object-fit: contain;" alt="Dokumentasi">
-                            </div>
+                            <table align="center" style="border-collapse: collapse; margin-top: 10px; margin-bottom: 5px; width: 100%;">
+                                <tr>
+                                    <td align="center">
+                                        <img src="${act.image}" width="320" style="width: 320px; max-width: 100%; height: auto; border: 1.5px solid #000000; padding: 2px;" alt="Dokumentasi">
+                                    </td>
+                                </tr>
+                            </table>
                             ` : ''}
                         </td>
                     </tr>
@@ -2727,20 +2670,17 @@ async function processSyncQueue() {
         }
 
         function setupRealtimeListeners() {
+            if (!currentUser) return;
+
             // Lapsit collection listener
             onSnapshot(reportsCollectionRef, (snapshot) => {
                 const reports = [];
                 snapshot.forEach((doc) => {
                     reports.push({ id: Number(doc.id), ...doc.data() });
                 });
-                if (reports.length > 0) {
-                    // Lindungi data lokal yang masih antre agar tidak tertimpa cloud lama
-                    const pendingIds = pendingSyncQueue.filter(q => q.collectionName === 'reports').map(q => q.id);
-                    const serverReports = reports.filter(r => !pendingIds.includes(r.id));
-                    const localUnsynced = lapsitDatabase.filter(r => pendingIds.includes(r.id));
-
-                    lapsitDatabase = [...localUnsynced, ...serverReports].sort((a, b) => new Date(b.date) - new Date(a.date));
-                    saveToLocalCache('siposena_reports', lapsitDatabase);
+                lapsitDatabase = reports.sort((a, b) => new Date(b.date) - new Date(a.date));
+                if (lapsitDatabase.length === 0) {
+                    lapsitDatabase = [...defaultReports];
                 }
                 if (activeTab === 'all') {
                     renderReports(lapsitDatabase);
@@ -2748,8 +2688,8 @@ async function processSyncQueue() {
                     renderDailyRecaps();
                 }
             }, (error) => {
-                console.warn("Realtime listener 'reports' terbatasi. Menggunakan backup lokal.", error.message);
-                renderReports(lapsitDatabase);
+                console.error("Lapsit subscription error:", error);
+                updateSyncStatus('error', '(Gagal Sync Lapsit)');
             });
 
             // Sick reports listener
@@ -2758,18 +2698,14 @@ async function processSyncQueue() {
                 snapshot.forEach((doc) => {
                     sicks.push({ id: Number(doc.id), ...doc.data() });
                 });
-                if (sicks.length > 0) {
-                    const pendingIds = pendingSyncQueue.filter(q => q.collectionName === 'sick_reports').map(q => q.id);
-                    const serverSicks = sicks.filter(s => !pendingIds.includes(s.id));
-                    const localUnsynced = sickDatabase.filter(s => pendingIds.includes(s.id));
-
-                    sickDatabase = [...localUnsynced, ...serverSicks].sort((a, b) => new Date(b.date) - new Date(a.date));
-                    saveToLocalCache('siposena_sick_reports', sickDatabase);
+                sickDatabase = sicks.sort((a, b) => new Date(b.date) - new Date(a.date));
+                if (sickDatabase.length === 0) {
+                    sickDatabase = [...defaultSicks];
                 }
                 applySickFilters();
             }, (error) => {
-                console.warn("Realtime listener 'sick' terbatasi. Menggunakan backup lokal.", error.message);
-                applySickFilters();
+                console.error("Sick reports subscription error:", error);
+                updateSyncStatus('error', '(Gagal Sync Sakit)');
             });
 
             // Damage reports listener
@@ -2778,37 +2714,52 @@ async function processSyncQueue() {
                 snapshot.forEach((doc) => {
                     damages.push({ id: Number(doc.id), ...doc.data() });
                 });
-                if (damages.length > 0) {
-                    const pendingIds = pendingSyncQueue.filter(q => q.collectionName === 'damage_reports').map(q => q.id);
-                    const serverDamages = damages.filter(d => !pendingIds.includes(d.id));
-                    const localUnsynced = damageDatabase.filter(d => pendingIds.includes(d.id));
-
-                    damageDatabase = [...localUnsynced, ...serverDamages].sort((a, b) => new Date(b.date) - new Date(a.date));
-                    saveToLocalCache('siposena_damage_reports', damageDatabase);
+                damageDatabase = damages.sort((a, b) => new Date(b.date) - new Date(a.date));
+                if (damageDatabase.length === 0) {
+                    damageDatabase = [...defaultDamages];
                 }
                 applyDamageFilters();
             }, (error) => {
-                console.warn("Realtime listener 'damages' terbatasi. Menggunakan backup lokal.", error.message);
-                applyDamageFilters();
+                console.error("Damage reports subscription error:", error);
+                updateSyncStatus('error', '(Gagal Sync Kerusakan)');
             });
         }
 
-       async function initFirebaseAndSync() {
-    // BYPASS: Langsung jalankan tanpa autentikasi
-    if (!db) {
-        fallbackToOffline();
-        return;
-    }
+        async function initFirebaseAndSync() {
+            if (typeof __firebase_config === 'undefined') {
+                fallbackToOffline();
+                return;
+            }
+            updateSyncStatus('saving');
+            try {
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                reportsCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
+                sickCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'sick_reports');
+                damagesCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'damage_reports');
 
-    updateSyncStatus('online', '(Koneksi Berhasil)');
-    setupRealtimeListeners();
-    processSyncQueue();
-}
+                const user = await authenticate();
+                if (user) {
+                    currentUser = user;
+                    updateSyncStatus('online', '(Koneksi Berhasil)');
+                    setupRealtimeListeners();
+                } else {
+                    fallbackToOffline();
+                }
+            } catch (err) {
+                console.error("Firebase connection error: ", err);
+                fallbackToOffline();
             }
         }
 
         function fallbackToOffline() {
             updateSyncStatus('offline');
+            lapsitDatabase = [...defaultReports];
+            sickDatabase = [...defaultSicks];
+            damageDatabase = [...defaultDamages];
             renderReports(lapsitDatabase);
             applySickFilters();
             applyDamageFilters();
@@ -2816,7 +2767,8 @@ async function processSyncQueue() {
         }
 
         function saveFormDraft() {
-            const draft = {
+            // Drafting is maintained securely in volatile memory to bypass LocalStorage entirely
+            temporaryFormDraft = {
                 date: document.getElementById('form-date').value,
                 piketKoor: document.getElementById('form-piket-koor').value,
                 piketSekretaris: document.getElementById('form-piket-sekretaris').value,
@@ -2838,67 +2790,30 @@ async function processSyncQueue() {
                 personnel: document.getElementById('form-personnel').value,
                 image: selectedCompressedImageBase64
             };
-            localStorage.setItem('siposena_lapsit_draft', JSON.stringify(draft));
         }
 
         function loadFormDraft() {
-            const draftStr = localStorage.getItem('siposena_lapsit_draft');
-            if (draftStr) {
-                try {
-                    const draft = JSON.parse(draftStr);
-                    if (draft.date) document.getElementById('form-date').value = draft.date;
-                    if (draft.piketKoor) document.getElementById('form-piket-koor').value = draft.piketKoor;
-                    if (draft.piketSekretaris) document.getElementById('form-piket-sekretaris').value = draft.piketSekretaris;
-                    if (draft.piketAnggota) document.getElementById('form-piket-anggota').value = draft.piketAnggota;
-                    if (draft.totalL) document.getElementById('form-total-l').value = draft.totalL;
-                    if (draft.totalP) document.getElementById('form-total-p').value = draft.totalP;
-                    if (draft.hadirL) document.getElementById('form-hadir-l').value = draft.hadirL;
-                    if (draft.hadirP) document.getElementById('form-hadir-p').value = draft.hadirP;
-                    if (draft.kurangL) document.getElementById('form-kurang-l').value = draft.kurangL;
-                    if (draft.kurangP) document.getElementById('form-kurang-p').value = draft.kurangP;
-                    if (draft.statDd) document.getElementById('form-stat-dd').value = draft.statDd;
-                    if (draft.statSakit) document.getElementById('form-stat-sakit').value = draft.statSakit;
-                    if (draft.statIjin) document.getElementById('form-stat-ijin').value = draft.statIjin;
-                    if (draft.statDl) document.getElementById('form-stat-dl').value = draft.statDl;
-                    if (draft.statTk) document.getElementById('form-stat-tk').value = draft.statTk;
-                    if (draft.activitySelect) {
-                        document.getElementById('form-activity-select').value = draft.activitySelect;
-                        if (draft.activitySelect === 'Lainnya') {
-                            document.getElementById('custom-activity-container').classList.remove('hidden');
-                        }
-                    }
-                    if (draft.activityTime) document.getElementById('form-activity-time').value = draft.activityTime;
-                    if (draft.activityCustom) document.getElementById('form-activity-custom').value = draft.activityCustom;
-                    if (draft.personnel) document.getElementById('form-personnel').value = draft.personnel;
-                    if (draft.image) {
-                        selectedCompressedImageBase64 = draft.image;
-                        const previewImg = document.getElementById('image-preview');
-                      } // Kurung penutup asli untuk if (draft.image)
+            // Initializing empty form, draft remains transient inside current tab memory
+            if (temporaryFormDraft.date) {
+                document.getElementById('form-date').value = temporaryFormDraft.date;
+            }
+        }
 
-async function initFirebaseAndSync() {
-    if (!db) {
-        fallbackToOffline();
-        return;
-    }
+        function clearFormDraft() {
+            temporaryFormDraft = {};
+        }
 
-    updateSyncStatus('saving');
-    updateSyncStatus('online', '(Koneksi Berhasil)');
-    setupRealtimeListeners();
-    processSyncQueue();
-}
+        window.addEventListener('online', () => {
+            showToast("Koneksi terdeteksi. Menyambung kembali ke Cloud Firestore...", "success");
+            initFirebaseAndSync();
+        });
 
-       window.addEventListener('offline', () => {
-    showToast("Koneksi terputus. Mode lokal aktif sementara.", "warning");
-    // Proteksi offline dimatikan agar tombol simpan & upload foto tidak terkunci otomatis
-});
+        window.addEventListener('offline', () => {
+            showToast("Koneksi terputus. Menggunakan data memori temporer.", "error");
+            updateSyncStatus('offline');
+        });
+
         // Global function exposures
-                    function switchMainSection(sectionId) {
-    const sections = ['section-lapsit', 'section-sick', 'section-damage'];
-    sections.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = (id === sectionId) ? 'block' : 'none';
-    });
-}
         window.toggleTheme = toggleTheme;
         window.switchMainSection = switchMainSection;
         window.loadDefaultPrajaStats = loadDefaultPrajaStats;
@@ -2922,6 +2837,7 @@ async function initFirebaseAndSync() {
         window.analyzeReportWithAI = analyzeReportWithAI;
         window.applyFilters = applyFilters;
         window.applySickFilters = applySickFilters;
+
         window.toggleDamageRepairerInput = toggleDamageRepairerInput;
         window.handleDamageSubmit = handleDamageSubmit;
         window.applyDamageFilters = applyDamageFilters;
@@ -2942,9 +2858,8 @@ async function initFirebaseAndSync() {
             document.getElementById('form-piket-sekretaris').value = "";
             
             loadDefaultPrajaStats();
-            loadFormDraft();
             
-            // Auto draft listener
+            // Auto draft dynamic listeners
             const draftableInputs = [
                 'form-date', 'form-piket-koor', 'form-piket-sekretaris', 'form-piket-anggota',
                 'form-total-l', 'form-total-p', 'form-hadir-l', 'form-hadir-p',
@@ -2960,28 +2875,5 @@ async function initFirebaseAndSync() {
             });
         }
     </script>
-    <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyCzz115LTrbzikw6raSCUPXiNqUtjMtGzY",
-    authDomain: "siposena-ipdn-kalbar.firebaseapp.com",
-    projectId: "siposena-ipdn-kalbar",
-    storageBucket: "siposena-ipdn-kalbar.firebasestorage.app",
-    messagingSenderId: "819859446303",
-    appId: "1:819859446303:web:0ad0aef9bc93ce1335132a",
-    measurementId: "G-NPB837K3SV"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
 </body>
 </html>
